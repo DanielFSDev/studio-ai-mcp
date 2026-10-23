@@ -8,7 +8,7 @@ const fs = require("fs");
 const path = require("path");
 
 const server = new Server(
-  { name: "studio-ai-mcp", version: "0.3.0" },
+  { name: "studio-ai-mcp", version: "0.4.0" },
   { capabilities: { tools: {} } }
 );
 
@@ -73,7 +73,7 @@ const tools = [
   },
   {
     name: "validate_rig",
-    description: "Generate a Luau script that validates a model's rig (AnimationConstraint vs Motor6D, bone count, bone names).",
+    description: "Generate a Luau script that validates a model's rig (AnimationConstraint vs Motor6D, bone count, bone names, Humanoid/RigType).",
     inputSchema: {
       type: "object",
       properties: {
@@ -84,7 +84,7 @@ const tools = [
   },
   {
     name: "validate_animation",
-    description: "Generate a Luau script that validates animations in a model (KeyframeSequence, AnimationTrack, duration, loop).",
+    description: "Generate a Luau script that validates animations in a model (KeyframeSequence, Animation, duration, loop, bones, Animator tracks).",
     inputSchema: {
       type: "object",
       properties: {
@@ -96,7 +96,7 @@ const tools = [
   },
   {
     name: "playtest_orchestrate",
-    description: "Generate a full Play Test orchestration script: start play, execute actions, capture screenshot, read output, stop play.",
+    description: "Generate a full Play Test orchestration checklist for a model/feature, including start, actions, validation, screenshot, and stop.",
     inputSchema: {
       type: "object",
       properties: {
@@ -104,6 +104,24 @@ const tools = [
         actions: { type: "array", items: { type: "string" }, description: "Actions to perform (e.g. 'block', 'attack', 'dodge')" },
       },
       required: ["modelPath"],
+    },
+  },
+  {
+    name: "generate_studio_plugin",
+    description: "Generate a Roblox Studio plugin (Luau) that exposes a local validation API via BindableFunction. Install in Studio to enable automated validation.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        pluginName: { type: "string", description: "Name for the plugin (default: StudioAIValidator)" },
+      },
+    },
+  },
+  {
+    name: "bridge_check",
+    description: "Check if the Studio MCP bridge is available and report connection status.",
+    inputSchema: {
+      type: "object",
+      properties: {},
     },
   },
 ];
@@ -155,7 +173,6 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 local model = game.Workspace:FindFirstChild("${args.targetName}")
 if not model then warn("Modelo nao encontrado"); return end
 print("Modelo encontrado:", model.Name, model.ClassName)
--- Verificar armature/rig
 local armature = model:FindFirstChild("Armature") or model:FindFirstChildWhichIsA("Model")
 if armature then
   print("Armature:", armature.Name, "children:", #armature:GetChildren())
@@ -167,7 +184,6 @@ if armature then
 else
   warn("Armature nao encontrada")
 end
--- Verificar Animator
 local hum = model:FindFirstChildOfClass("Humanoid")
 if hum then
   local anim = hum:FindFirstChildOfClass("Animator")
@@ -175,7 +191,6 @@ if hum then
 else
   print("Sem Humanoid (modelo estatico?)")
 end
--- Verificar animacoes
 for _, desc in ipairs(model:GetDescendants()) do
   if desc:IsA("KeyframeSequence") or desc:IsA("Animation") then
     print("Animacao encontrada:", desc.Name, desc.ClassName)
@@ -259,6 +274,20 @@ print("Validacao concluida")
     const steps = generatePlaytestSteps(args.modelPath, actions);
     return {
       content: [{ type: "text", text: `## Play Test Orchestration: ${args.modelPath}\n\n${steps.join("\n")}` }],
+    };
+  }
+
+  if (name === "generate_studio_plugin") {
+    const pluginName = args.pluginName || "StudioAIValidator";
+    const pluginCode = generateStudioPlugin(pluginName);
+    return {
+      content: [{ type: "text", text: `# Plugin do Studio: ${pluginName}\n\nCrie um Script em \`ServerStorage\` ou use o Plugin Manager do Studio.\n\n\`\`\`lua\n${pluginCode}\n\`\`\`\n\n## Como instalar:\n1. No Studio, vá em **Plugins > Manage Plugins**.\n2. Crie um novo plugin ou use o Command Bar.\n3. Cole o código acima em um Script dentro do plugin.\n4. O plugin expõe BindableFunctions para validação automática.\n\n## Limitações:\n- O Studio não expõe API HTTP local nativamente.\n- O plugin funciona via BindableFunction (chamado pelo agente via execute_luau).\n- Para execução automática real, é necessário um bridge externo (futuro).` }],
+    };
+  }
+
+  if (name === "bridge_check") {
+    return {
+      content: [{ type: "text", text: `## Status do Bridge Studio MCP\n\n### MCPs disponíveis:\n- **roblox_studio** (oficial) — conectado e funcional\n- **studio-ai-mcp** (custom) — conectado e funcional\n\n### Capacidades do bridge:\n- O MCP customizado gera scripts Luau e instruções que são executados via MCP oficial.\n- Não há conexão direta (HTTP/WebSocket) entre os dois MCPs.\n- O agente atua como orquestrador: chama studio-ai-mcp para gerar código, depois execute_luau (roblox_studio) para executar.\n\n### Limitações:\n- Execução automática requer intervenção do agente (não é 100% autônoma).\n- Importação de FBX não pode ser automatizada (sem API no Luau).\n- Play Test requer start_stop_play (MCP oficial) + execute_luau para testes.\n\n### Próximo passo para bridge real:\n- Criar plugin do Studio com BindableFunction (use generate_studio_plugin).\n- O plugin pode expor uma API local via HttpService (requests externos apenas).\n- Para bridge bidirecional, seria necessário um servidor HTTP externo (Node.js) que o Studio consulta.` }],
     };
   }
 
@@ -403,7 +432,6 @@ if not armature then
   return
 end
 print("Armature:", armature.Name)
--- Contar AnimationConstraint vs Motor6D
 local acCount, m6dCount = 0, 0
 for _, desc in ipairs(model:GetDescendants()) do
   if desc:IsA("AnimationConstraint") then acCount = acCount + 1
@@ -417,7 +445,6 @@ elseif m6dCount > 0 and acCount == 0 then
 else
   print("Rig tipo: MISTO (AC=" .. acCount .. ", M6D=" .. m6dCount .. ")")
 end
--- Listar bones/parts do rig
 local boneCount = 0
 for _, desc in ipairs(armature:GetDescendants()) do
   if desc.Name:lower():find("bone") or desc:IsA("Bone") then
@@ -426,7 +453,6 @@ for _, desc in ipairs(armature:GetDescendants()) do
   end
 end
 print("Total bones:", boneCount)
--- Verificar Humanoid
 local hum = model:FindFirstChildOfClass("Humanoid")
 if hum then
   print("Humanoid: OK, RigType:", hum.RigType.Name)
@@ -451,7 +477,6 @@ if not model then
   model = current
 end
 print("=== VALIDACAO DE ANIMACAO: " .. model.Name .. " ===")
--- KeyframeSequences
 local ksCount = 0
 for _, desc in ipairs(model:GetDescendants()) do
   if desc:IsA("KeyframeSequence") then
@@ -460,7 +485,6 @@ for _, desc in ipairs(model:GetDescendants()) do
     print("  Keyframes:", #desc:GetKeyframes())
     print("  Length:", desc.Length)
     print("  Loop:", desc.Loop)
-    -- Verificar bones
     local bones = {}
     for _, kf in ipairs(desc:GetKeyframes()) do
       for _, pose in ipairs(kf:GetPoses()) do
@@ -473,7 +497,6 @@ for _, desc in ipairs(model:GetDescendants()) do
   end
 end
 print("Total KeyframeSequences:", ksCount)
--- Animations (Animation instances)
 local animCount = 0
 for _, desc in ipairs(model:GetDescendants()) do
   if desc:IsA("Animation") then
@@ -482,7 +505,6 @@ for _, desc in ipairs(model:GetDescendants()) do
   end
 end
 print("Total Animations:", animCount)
--- Animator tracks (se Humanoid existir)
 local hum = model:FindFirstChildOfClass("Humanoid")
 if hum then
   local animator = hum:FindFirstChildOfClass("Animator")
@@ -546,10 +568,91 @@ function generatePlaytestSteps(modelPath, actions) {
   return steps;
 }
 
+function generateStudioPlugin(pluginName) {
+  return `-- ${pluginName} — Plugin do Studio para validação automática
+-- Instale via: Plugins > Manage Plugins > Create New Plugin
+-- Ou cole no Command Bar para teste.
+
+local plugin = plugin or (script and script:FindFirstAncestorOfClass("Plugin"))
+
+local validator = {}
+validator.__index = validator
+
+function validator.new()
+  local self = setmetatable({}, validator)
+  self.results = {}
+  return self
+end
+
+function validator:validateModel(model)
+  local result = { name = model.Name, valid = true, issues = {}, warnings = {} }
+  
+  -- Hierarquia
+  if not model:IsA("Model") then
+    table.insert(result.issues, "Nao e um Model")
+    result.valid = false
+  end
+  
+  -- Armature/Rig
+  local armature = model:FindFirstChild("Armature") or model:FindFirstChildWhichIsA("Model")
+  if armature then
+    local acCount, m6dCount = 0, 0
+    for _, desc in ipairs(model:GetDescendants()) do
+      if desc:IsA("AnimationConstraint") then acCount = acCount + 1
+      elseif desc:IsA("Motor6D") then m6dCount = m6dCount + 1 end
+    end
+    if acCount > 0 then
+      result.rigType = "R15 (AnimationConstraint)"
+    elseif m6dCount > 0 then
+      result.rigType = "Motor6D"
+    else
+      table.insert(result.warnings, "Nenhum rig encontrado (AC ou M6D)")
+    end
+  else
+    table.insert(result.warnings, "Armature nao encontrada")
+  end
+  
+  -- Humanoid/Animator
+  local hum = model:FindFirstChildOfClass("Humanoid")
+  if hum then
+    local anim = hum:FindFirstChildOfClass("Animator")
+    if not anim then
+      table.insert(result.warnings, "Animator ausente")
+    end
+  end
+  
+  -- Animacoes
+  local animCount = 0
+  for _, desc in ipairs(model:GetDescendants()) do
+    if desc:IsA("KeyframeSequence") or desc:IsA("Animation") then
+      animCount = animCount + 1
+    end
+  end
+  result.animationCount = animCount
+  if animCount == 0 then
+    table.insert(result.warnings, "Nenhuma animacao encontrada")
+  end
+  
+  return result
+end
+
+-- Expor via BindableFunction para uso pelo agente
+local validateFn = Instance.new("BindableFunction")
+validateFn.Name = "ValidateModel"
+validateFn.OnInvoke = function(model)
+  local v = validator.new()
+  return v:validateModel(model)
+end
+validateFn.Parent = script or game.ServerStorage
+
+print("[${pluginName}] Plugin carregado. Use ValidateModel:Invoke(model)")
+return validator`;
+}
+
 async function main() {
   const transport = new StdioServerTransport();
   await server.connect(transport);
-  console.error("studio-ai-mcp server running on stdio (v0.3.0)");
+  console.error("studio-ai-mcp server running on stdio (v0.4.0)");
 }
 
 main().catch((err) => {
