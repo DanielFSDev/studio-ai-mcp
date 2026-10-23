@@ -1,0 +1,22 @@
+{
+  "name": "studio-ai-mcp",
+  "version": "0.1.0",
+  "description": "MCP server for Roblox Studio - AI-powered game development tools",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "dev": "node --watch index.js"
+  },
+  "keywords": [
+    "roblox",
+    "studio",
+    "mcp",
+    "ai",
+    "game-development"
+  ],
+  "author": "DanielFSDev",
+  "license": "MIT",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.0"
+  }
+}
