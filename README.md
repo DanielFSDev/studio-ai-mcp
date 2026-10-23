@@ -43,7 +43,7 @@ node src/index.js
 
 ### `validate_model`
 
-Validate a Roblox model's hierarchy, rig, and animation readiness.
+Generate a Luau validation script for a Roblox model (hierarchy, rig, animation readiness). Run the returned code via `execute_luau` in Studio.
 
 **Parameters:**
 - `modelPath` (string, required) — Path to the model in Studio (e.g. `Workspace.PilotMonster`)
@@ -54,6 +54,29 @@ Check the status of the Blender → Roblox asset pipeline.
 
 **Parameters:**
 - `pipelineDir` (string, required) — Path to the pipeline directory
+
+### `import_fbx_instructions`
+
+Return step-by-step instructions for importing an FBX file into Roblox Studio, plus a post-import validation script.
+
+**Parameters:**
+- `fbxPath` (string, required) — Path to the FBX file
+- `targetName` (string, required) — Name for the imported model in Studio
+
+### `run_playtest_checklist`
+
+Generate a checklist of Play Test validation steps for a model/feature.
+
+**Parameters:**
+- `feature` (string, required) — Feature to test (e.g. "block animation", "combat transitions")
+
+### `generate_validation_script`
+
+Generate a Luau script that validates a model's structure (meshes, armature, animations, attributes).
+
+**Parameters:**
+- `modelPath` (string, required) — Path to the model in Studio
+- `checks` (array, optional) — Checks to perform: "hierarchy", "rig", "animation", "attributes"
 
 **Returns:** JSON with source files, export files, and report files.
 
