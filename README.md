@@ -101,6 +101,17 @@ Generate a full Play Test orchestration checklist for a model/feature, including
 - `modelPath` (string, required) — Path to the model to test
 - `actions` (array, optional) — Actions to perform (e.g. "block", "attack", "dodge")
 
+### `generate_studio_plugin`
+
+Generate a Roblox Studio plugin (Luau) that exposes a local validation API via BindableFunction. Install in Studio to enable automated validation.
+
+**Parameters:**
+- `pluginName` (string, optional) — Name for the plugin (default: StudioAIValidator)
+
+### `bridge_check`
+
+Check if the Studio MCP bridge is available and report connection status, capabilities, and limitations.
+
 **Returns:** JSON with source files, export files, and report files.
 
 ## Pipeline
