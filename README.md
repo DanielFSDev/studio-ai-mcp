@@ -78,6 +78,29 @@ Generate a Luau script that validates a model's structure (meshes, armature, ani
 - `modelPath` (string, required) — Path to the model in Studio
 - `checks` (array, optional) — Checks to perform: "hierarchy", "rig", "animation", "attributes"
 
+### `validate_rig`
+
+Generate a Luau script that validates a model's rig (AnimationConstraint vs Motor6D, bone count, bone names, Humanoid/RigType).
+
+**Parameters:**
+- `modelPath` (string, required) — Path to the model in Studio
+
+### `validate_animation`
+
+Generate a Luau script that validates animations in a model (KeyframeSequence, Animation instances, duration, loop, bones, Animator tracks).
+
+**Parameters:**
+- `modelPath` (string, required) — Path to the model in Studio
+- `animName` (string, optional) — Expected animation name
+
+### `playtest_orchestrate`
+
+Generate a full Play Test orchestration checklist for a model/feature, including start, actions, validation, screenshot, and stop.
+
+**Parameters:**
+- `modelPath` (string, required) — Path to the model to test
+- `actions` (array, optional) — Actions to perform (e.g. "block", "attack", "dodge")
+
 **Returns:** JSON with source files, export files, and report files.
 
 ## Pipeline
