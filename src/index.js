@@ -8,7 +8,7 @@ const fs = require("fs");
 const path = require("path");
 
 const server = new Server(
-  { name: "studio-ai-mcp", version: "0.2.0" },
+  { name: "studio-ai-mcp", version: "0.3.0" },
   { capabilities: { tools: {} } }
 );
 
@@ -16,7 +16,7 @@ const server = new Server(
 const tools = [
   {
     name: "validate_model",
-    description: "Generate a Luau validation script for a Roblox model (hierarchy, rig, animation readiness). Run the returned code via execute_luau in Studio.",
+    description: "Generate a Luau validation script for a Roblox model (hierarchy, rig, animation readiness). Run via execute_luau in Studio.",
     inputSchema: {
       type: "object",
       properties: {
@@ -42,7 +42,7 @@ const tools = [
     inputSchema: {
       type: "object",
       properties: {
-        fbxPath: { type: "string", description: "Path to the FBX file (e.g. assets/pipeline/02-export/pilot_monster.fbx)" },
+        fbxPath: { type: "string", description: "Path to the FBX file" },
         targetName: { type: "string", description: "Name for the imported model in Studio" },
       },
       required: ["fbxPath", "targetName"],
@@ -66,7 +66,42 @@ const tools = [
       type: "object",
       properties: {
         modelPath: { type: "string", description: "Path to the model in Studio" },
-        checks: { type: "array", items: { type: "string" }, description: "Checks to perform: 'hierarchy', 'rig', 'animation', 'attributes'" },
+        checks: { type: "array", items: { type: "string" }, description: "Checks: 'hierarchy', 'rig', 'animation', 'attributes'" },
+      },
+      required: ["modelPath"],
+    },
+  },
+  {
+    name: "validate_rig",
+    description: "Generate a Luau script that validates a model's rig (AnimationConstraint vs Motor6D, bone count, bone names).",
+    inputSchema: {
+      type: "object",
+      properties: {
+        modelPath: { type: "string", description: "Path to the model in Studio" },
+      },
+      required: ["modelPath"],
+    },
+  },
+  {
+    name: "validate_animation",
+    description: "Generate a Luau script that validates animations in a model (KeyframeSequence, AnimationTrack, duration, loop).",
+    inputSchema: {
+      type: "object",
+      properties: {
+        modelPath: { type: "string", description: "Path to the model in Studio" },
+        animName: { type: "string", description: "Expected animation name (optional)" },
+      },
+      required: ["modelPath"],
+    },
+  },
+  {
+    name: "playtest_orchestrate",
+    description: "Generate a full Play Test orchestration script: start play, execute actions, capture screenshot, read output, stop play.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        modelPath: { type: "string", description: "Path to the model to test" },
+        actions: { type: "array", items: { type: "string" }, description: "Actions to perform (e.g. 'block', 'attack', 'dodge')" },
       },
       required: ["modelPath"],
     },
@@ -125,7 +160,7 @@ local armature = model:FindFirstChild("Armature") or model:FindFirstChildWhichIs
 if armature then
   print("Armature:", armature.Name, "children:", #armature:GetChildren())
   for _, child in ipairs(armature:GetDescendants()) do
-    if child:IsA("Bone") or child.Name:find("Bone") then
+    if child:IsA("Bone") or child.Name:lower():find("bone") then
       print("  Bone:", child.Name, child.ClassName)
     end
   end
@@ -140,10 +175,10 @@ if hum then
 else
   print("Sem Humanoid (modelo estatico?)")
 end
--- Verificar animacoes (KeyframeSequence)
+-- Verificar animacoes
 for _, desc in ipairs(model:GetDescendants()) do
-  if desc:IsA("KeyframeSequence") then
-    print("Animacao encontrada:", desc.Name, "frames:", #desc:GetKeyframes())
+  if desc:IsA("KeyframeSequence") or desc:IsA("Animation") then
+    print("Animacao encontrada:", desc.Name, desc.ClassName)
   end
 end
 print("Validacao concluida")
@@ -205,13 +240,35 @@ print("Validacao concluida")
     };
   }
 
+  if (name === "validate_rig") {
+    const script = generateRigValidationScript(args.modelPath);
+    return {
+      content: [{ type: "text", text: `Run this Luau code via execute_luau (Edit mode) to validate rig of ${args.modelPath}:\n\n\`\`\`lua\n${script}\n\`\`\`` }],
+    };
+  }
+
+  if (name === "validate_animation") {
+    const script = generateAnimationValidationScript(args.modelPath, args.animName);
+    return {
+      content: [{ type: "text", text: `Run this Luau code via execute_luau (Edit mode) to validate animations of ${args.modelPath}:\n\n\`\`\`lua\n${script}\n\`\`\`` }],
+    };
+  }
+
+  if (name === "playtest_orchestrate") {
+    const actions = args.actions || ["block", "attack", "dodge"];
+    const steps = generatePlaytestSteps(args.modelPath, actions);
+    return {
+      content: [{ type: "text", text: `## Play Test Orchestration: ${args.modelPath}\n\n${steps.join("\n")}` }],
+    };
+  }
+
   return { content: [{ type: "text", text: `Unknown tool: ${name}` }] };
 });
 
 function generateValidateScript(modelPath) {
-  return `local model = game.Workspace:FindFirstChild("${modelPath.split(".")[1] || modelPath}")
+  const modelName = modelPath.split(".").pop();
+  return `local model = game.Workspace:FindFirstChild("${modelName}")
 if not model then
-  -- tentar caminho completo
   local parts = string.split("${modelPath}", ".")
   local current = game
   for _, part in ipairs(parts) do
@@ -226,21 +283,12 @@ print("Children:", #model:GetChildren())
 for _, child in ipairs(model:GetChildren()) do
   print("  Child:", child.Name, child.ClassName)
 end
--- Verificar armature/rig
 local armature = model:FindFirstChild("Armature") or model:FindFirstChildWhichIsA("Model")
 if armature then
-  print("Armature encontrada:", armature.Name)
-  local boneCount = 0
-  for _, desc in ipairs(armature:GetDescendants()) do
-    if desc.Name:lower():find("bone") or desc:IsA("Bone") then
-      boneCount = boneCount + 1
-    end
-  end
-  print("Bones/Parts de rig:", boneCount)
+  print("Armature:", armature.Name, "children:", #armature:GetChildren())
 else
   warn("Armature nao encontrada")
 end
--- Verificar Animator
 local hum = model:FindFirstChildOfClass("Humanoid")
 if hum then
   local anim = hum:FindFirstChildOfClass("Animator")
@@ -248,7 +296,6 @@ if hum then
 else
   print("Sem Humanoid (modelo estatico?)")
 end
--- Verificar animacoes
 local animCount = 0
 for _, desc in ipairs(model:GetDescendants()) do
   if desc:IsA("KeyframeSequence") or desc:IsA("Animation") then
@@ -256,12 +303,13 @@ for _, desc in ipairs(model:GetDescendants()) do
     print("Animacao:", desc.Name, desc.ClassName)
   end
 end
-print("Total de animacoes encontradas:", animCount)
+print("Total animacoes:", animCount)
 print("=== FIM DA VALIDACAO ===")`;
 }
 
 function generateValidationScript(modelPath, checks) {
-  let script = `local model = game.Workspace:FindFirstChild("${modelPath.split(".").pop()}")
+  const modelName = modelPath.split(".").pop();
+  let script = `local model = game.Workspace:FindFirstChild("${modelName}")
 if not model then
   local parts = string.split("${modelPath}", ".")
   local current = game
@@ -276,7 +324,6 @@ print("=== VALIDACAO: " .. model.Name .. " ===")
 
   if (checks.includes("hierarchy")) {
     script += `
--- Hierarchy check
 print("--- Hierarquia ---")
 print("ClassName:", model.ClassName)
 print("Children:", #model:GetChildren())
@@ -288,13 +335,12 @@ end
 
   if (checks.includes("rig")) {
     script += `
--- Rig check
 print("--- Rig ---")
 local armature = model:FindFirstChild("Armature") or model:FindFirstChildWhichIsA("Model")
 if armature then
   print("Armature:", armature.Name, "children:", #armature:GetChildren())
   for _, desc in ipairs(armature:GetDescendants()) do
-    if desc.Name:lower():find("bone") then
+    if desc.Name:lower():find("bone") or desc:IsA("Bone") then
       print("  Bone:", desc.Name, desc.ClassName)
     end
   end
@@ -306,7 +352,6 @@ end
 
   if (checks.includes("animation")) {
     script += `
--- Animation check
 print("--- Animacoes ---")
 local hum = model:FindFirstChildOfClass("Humanoid")
 if hum then
@@ -328,7 +373,6 @@ print("Total animacoes:", animCount)
 
   if (checks.includes("attributes")) {
     script += `
--- Attributes check
 print("--- Atributos ---")
 for name, value in pairs(model:GetAttributes()) do
   print("  " .. name .. ":", value)
@@ -340,10 +384,172 @@ end
   return script;
 }
 
+function generateRigValidationScript(modelPath) {
+  const modelName = modelPath.split(".").pop();
+  return `local model = game.Workspace:FindFirstChild("${modelName}")
+if not model then
+  local parts = string.split("${modelPath}", ".")
+  local current = game
+  for _, part in ipairs(parts) do
+    current = current:FindFirstChild(part)
+    if not current then warn("Nao encontrado:", part); return end
+  end
+  model = current
+end
+print("=== VALIDACAO DE RIG: " .. model.Name .. " ===")
+local armature = model:FindFirstChild("Armature") or model:FindFirstChildWhichIsA("Model")
+if not armature then
+  warn("Armature nao encontrada")
+  return
+end
+print("Armature:", armature.Name)
+-- Contar AnimationConstraint vs Motor6D
+local acCount, m6dCount = 0, 0
+for _, desc in ipairs(model:GetDescendants()) do
+  if desc:IsA("AnimationConstraint") then acCount = acCount + 1
+  elseif desc:IsA("Motor6D") then m6dCount = m6dCount + 1 end
+end
+print("AnimationConstraint:", acCount, "| Motor6D:", m6dCount)
+if acCount > 0 and m6dCount == 0 then
+  print("Rig tipo: R15 (AnimationConstraint) - AvatarJointUpgrade ativo")
+elseif m6dCount > 0 and acCount == 0 then
+  print("Rig tipo: Motor6D (AvatarJointUpgrade desativado ou R6)")
+else
+  print("Rig tipo: MISTO (AC=" .. acCount .. ", M6D=" .. m6dCount .. ")")
+end
+-- Listar bones/parts do rig
+local boneCount = 0
+for _, desc in ipairs(armature:GetDescendants()) do
+  if desc.Name:lower():find("bone") or desc:IsA("Bone") then
+    boneCount = boneCount + 1
+    print("  Bone:", desc.Name, desc.ClassName)
+  end
+end
+print("Total bones:", boneCount)
+-- Verificar Humanoid
+local hum = model:FindFirstChildOfClass("Humanoid")
+if hum then
+  print("Humanoid: OK, RigType:", hum.RigType.Name)
+  local animator = hum:FindFirstChildOfClass("Animator")
+  print("Animator:", animator and "OK" or "AUSENTE")
+else
+  print("Sem Humanoid")
+end
+print("=== FIM VALIDACAO RIG ===")`;
+}
+
+function generateAnimationValidationScript(modelPath, animName) {
+  const modelName = modelPath.split(".").pop();
+  return `local model = game.Workspace:FindFirstChild("${modelName}")
+if not model then
+  local parts = string.split("${modelPath}", ".")
+  local current = game
+  for _, part in ipairs(parts) do
+    current = current:FindFirstChild(part)
+    if not current then warn("Nao encontrado:", part); return end
+  end
+  model = current
+end
+print("=== VALIDACAO DE ANIMACAO: " .. model.Name .. " ===")
+-- KeyframeSequences
+local ksCount = 0
+for _, desc in ipairs(model:GetDescendants()) do
+  if desc:IsA("KeyframeSequence") then
+    ksCount = ksCount + 1
+    print("KeyframeSequence:", desc.Name)
+    print("  Keyframes:", #desc:GetKeyframes())
+    print("  Length:", desc.Length)
+    print("  Loop:", desc.Loop)
+    -- Verificar bones
+    local bones = {}
+    for _, kf in ipairs(desc:GetKeyframes()) do
+      for _, pose in ipairs(kf:GetPoses()) do
+        bones[pose.Name] = true
+      end
+    end
+    local boneNames = {}
+    for name in pairs(bones) do table.insert(boneNames, name) end
+    print("  Bones:", table.concat(boneNames, ", "))
+  end
+end
+print("Total KeyframeSequences:", ksCount)
+-- Animations (Animation instances)
+local animCount = 0
+for _, desc in ipairs(model:GetDescendants()) do
+  if desc:IsA("Animation") then
+    animCount = animCount + 1
+    print("Animation:", desc.Name, "ID:", desc.AnimationId)
+  end
+end
+print("Total Animations:", animCount)
+-- Animator tracks (se Humanoid existir)
+local hum = model:FindFirstChildOfClass("Humanoid")
+if hum then
+  local animator = hum:FindFirstChildOfClass("Animator")
+  if animator then
+    local tracks = animator:GetPlayingAnimationTracks()
+    print("Tracks ativas:", #tracks)
+    for _, track in ipairs(tracks) do
+      print("  Track:", track.Name, "Playing:", track.IsPlaying, "Length:", track.Length)
+    end
+  end
+end
+print("=== FIM VALIDACAO ANIMACAO ===")`;
+}
+
+function generatePlaytestSteps(modelPath, actions) {
+  const steps = [
+    `## Play Test Orchestration: ${modelPath}`,
+    ``,
+    `### Pre-condicoes`,
+    `- Modelo importado no Workspace como "${modelPath.split(".").pop()}"`,
+    `- Sem erros no Output`,
+    ``,
+    `### Passos`,
+  ];
+
+  let stepNum = 1;
+  steps.push(`${stepNum++}. Iniciar Play Test (start_stop_play: true)`);
+  steps.push(`${stepNum++}. Verificar que o modelo aparece no viewport (screen_capture)`);
+
+  for (const action of actions) {
+    switch (action.toLowerCase()) {
+      case "block":
+        steps.push(`${stepNum++}. Pressionar botao direito (bloqueio)`);
+        steps.push(`${stepNum++}. Verificar pose de bloqueio (braços levantados)`);
+        steps.push(`${stepNum++}. Soltar botao e verificar retorno ao neutro`);
+        break;
+      case "attack":
+        steps.push(`${stepNum++}. Clicar em alvo (ataque)`);
+        steps.push(`${stepNum++}. Verificar animacao de ataque`);
+        break;
+      case "dodge":
+        steps.push(`${stepNum++}. Pressionar tecla C (esquiva)`);
+        steps.push(`${stepNum++}. Verificar dash (movimento rapido)`);
+        break;
+      default:
+        steps.push(`${stepNum++}. Executar acao: ${action}`);
+    }
+  }
+
+  steps.push(`${stepNum++}. Verificar Output (sem erros novos)`);
+  steps.push(`${stepNum++}. Capturar screenshot (screen_capture)`);
+  steps.push(`${stepNum++}. Parar Play Test (start_stop_play: false)`);
+
+  steps.push(``);
+  steps.push(`### Criterios de aceitacao`);
+  steps.push(`- Nenhum erro novo no Output`);
+  steps.push(`- Modelo visivel e na posicao correta`);
+  steps.push(`- Animacao visivelmente ativa (se aplicavel)`);
+  steps.push(`- Equipamentos acompanham a animacao (se aplicavel)`);
+
+  return steps;
+}
+
 async function main() {
   const transport = new StdioServerTransport();
   await server.connect(transport);
-  console.error("studio-ai-mcp server running on stdio (v0.2.0)");
+  console.error("studio-ai-mcp server running on stdio (v0.3.0)");
 }
 
 main().catch((err) => {
