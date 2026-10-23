@@ -1,32 +1,34 @@
 # studio-ai-mcp
 
-MCP server for Roblox Studio — AI-powered game development tools.
+Servidor MCP para o Roblox Studio — ferramentas de desenvolvimento de jogos com IA.
 
-## Overview
+## Visão geral
 
-This MCP server provides tools for Roblox Studio that go beyond the official MCP, including:
-- **Asset validation** — validate model hierarchy, rig, and animation readiness
-- **Pipeline management** — check status of the Blender → Roblox asset pipeline
-- *(Planned)* Automated FBX import, rig validation, and Play Test orchestration
+Este servidor MCP fornece ferramentas para o Roblox Studio que vão além do MCP oficial, incluindo:
 
-## Installation
+- **Validação de assets** — validar hierarquia, rig e prontidão de animação de modelos
+- **Gerenciamento de pipeline** — verificar status do pipeline Blender → Roblox
+- **Orquestração de testes** — gerar checklists de Play Test e scripts de validação
+- **Geração de plugins** — criar plugins do Studio para validação automatizada
+
+## Instalação
 
 ```bash
 npm install
 ```
 
-## Usage
+## Uso
 
-### As MCP server (stdio)
+### Como servidor MCP (stdio)
 
-Add to your OpenCode config (`~/.config/opencode/opencode.json`):
+Adicione ao seu arquivo de configuração do OpenCode (`~/.config/opencode/opencode.json`):
 
 ```json
 {
   "mcp": {
     "studio-ai-mcp": {
       "type": "local",
-      "command": ["node", "path/to/studio-ai-mcp/src/index.js"],
+      "command": ["node", "caminho/para/studio-ai-mcp/src/index.js"],
       "enabled": true
     }
   }
@@ -39,102 +41,108 @@ Add to your OpenCode config (`~/.config/opencode/opencode.json`):
 node src/index.js
 ```
 
-## Tools
+## Ferramentas
 
 ### `validate_model`
 
-Generate a Luau validation script for a Roblox model (hierarchy, rig, animation readiness). Run the returned code via `execute_luau` in Studio.
+Gera um script Luau de validação completa de um modelo (hierarquia, rig, animação). Execute o código retornado via `execute_luau` no Studio.
 
-**Parameters:**
-- `modelPath` (string, required) — Path to the model in Studio (e.g. `Workspace.PilotMonster`)
+**Parâmetros:**
+- `modelPath` (string, obrigatório) — Caminho do modelo no Studio (ex.: `Workspace.PilotMonster`)
 
 ### `pipeline_status`
 
-Check the status of the Blender → Roblox asset pipeline.
+Verifica o status do pipeline Blender → Roblox.
 
-**Parameters:**
-- `pipelineDir` (string, required) — Path to the pipeline directory
+**Parâmetros:**
+- `pipelineDir` (string, obrigatório) — Caminho do diretório do pipeline
+
+**Retorno:** JSON com arquivos de origem, exportação e relatórios.
 
 ### `import_fbx_instructions`
 
-Return step-by-step instructions for importing an FBX file into Roblox Studio, plus a post-import validation script.
+Retorna instruções passo a passo para importar um arquivo FBX no Roblox Studio, mais um script de validação pós-importação.
 
-**Parameters:**
-- `fbxPath` (string, required) — Path to the FBX file
-- `targetName` (string, required) — Name for the imported model in Studio
+**Parâmetros:**
+- `fbxPath` (string, obrigatório) — Caminho do arquivo FBX
+- `targetName` (string, obrigatório) — Nome do modelo no Studio
 
 ### `run_playtest_checklist`
 
-Generate a checklist of Play Test validation steps for a model/feature.
+Gera um checklist de validação de Play Test para um modelo ou funcionalidade.
 
-**Parameters:**
-- `feature` (string, required) — Feature to test (e.g. "block animation", "combat transitions")
+**Parâmetros:**
+- `feature` (string, obrigatório) — Funcionalidade a testar (ex.: "block animation", "combat transitions")
 
 ### `generate_validation_script`
 
-Generate a Luau script that validates a model's structure (meshes, armature, animations, attributes).
+Gera um script Luau de validação customizável.
 
-**Parameters:**
-- `modelPath` (string, required) — Path to the model in Studio
-- `checks` (array, optional) — Checks to perform: "hierarchy", "rig", "animation", "attributes"
+**Parâmetros:**
+- `modelPath` (string, obrigatório) — Caminho do modelo no Studio
+- `checks` (array, opcional) — Verificações a realizar: "hierarchy", "rig", "animation", "attributes"
 
 ### `validate_rig`
 
-Generate a Luau script that validates a model's rig (AnimationConstraint vs Motor6D, bone count, bone names, Humanoid/RigType).
+Gera um script Luau que valida o rig de um modelo (AnimationConstraint vs Motor6D, contagem de bones, nomes, Humanoid/RigType).
 
-**Parameters:**
-- `modelPath` (string, required) — Path to the model in Studio
+**Parâmetros:**
+- `modelPath` (string, obrigatório) — Caminho do modelo no Studio
 
 ### `validate_animation`
 
-Generate a Luau script that validates animations in a model (KeyframeSequence, Animation instances, duration, loop, bones, Animator tracks).
+Gera um script Luau que valida animações em um modelo (KeyframeSequence, Animation, duração, loop, bones, tracks do Animator).
 
-**Parameters:**
-- `modelPath` (string, required) — Path to the model in Studio
-- `animName` (string, optional) — Expected animation name
+**Parâmetros:**
+- `modelPath` (string, obrigatório) — Caminho do modelo no Studio
+- `animName` (string, opcional) — Nome esperado da animação
 
 ### `playtest_orchestrate`
 
-Generate a full Play Test orchestration checklist for a model/feature, including start, actions, validation, screenshot, and stop.
+Gera uma orquestração completa de Play Test para um modelo/funcionalidade, incluindo início, ações, validação, captura de tela e parada.
 
-**Parameters:**
-- `modelPath` (string, required) — Path to the model to test
-- `actions` (array, optional) — Actions to perform (e.g. "block", "attack", "dodge")
+**Parâmetros:**
+- `modelPath` (string, obrigatório) — Caminho do modelo a testar
+- `actions` (array, opcional) — Ações a executar (ex.: "block", "attack", "dodge")
 
 ### `generate_studio_plugin`
 
-Generate a Roblox Studio plugin (Luau) that exposes a local validation API via BindableFunction. Install in Studio to enable automated validation.
+Gera um plugin do Roblox Studio (Luau) que expõe uma API de validação local via BindableFunction.
 
-**Parameters:**
-- `pluginName` (string, optional) — Name for the plugin (default: StudioAIValidator)
+**Parâmetros:**
+- `pluginName` (string, opcional) — Nome do plugin (padrão: StudioAIValidator)
 
 ### `bridge_check`
 
-Check if the Studio MCP bridge is available and report connection status, capabilities, and limitations.
+Verifica se o bridge do Studio MCP está disponível e reporta status de conexão, capacidades e limitações.
 
-**Returns:** JSON with source files, export files, and report files.
+## Pipeline de assets
 
-## Pipeline
-
-The asset pipeline follows this structure:
+O pipeline de assets segue esta estrutura:
 
 ```
 assets/pipeline/
-├── 01-source/    # Original .blend files (never overwrite)
-├── 02-export/    # Exported FBX/glTF ready for Roblox import
-└── 03-reports/   # JSON validation reports
+├── 01-source/    # Arquivos .blend originais (nunca sobrescrever)
+├── 02-export/    # FBX/glTF exportados, prontos para importação no Roblox
+└── 03-reports/   # Relatórios JSON de validação
 ```
 
-Validation script: `tools/blender/validate_export.py`
+Script de validação: `tools/blender/validate_export.py`
+
+## Limitações conhecidas
+
+- O MCP **não importa FBX automaticamente** (não há API no Luau/MCP para isso). A ferramenta `import_fbx_instructions` fornece instruções manuais + script de validação pós-importação.
+- O MCP **não executa Play Test automaticamente** (requer MCP oficial do Studio). A ferramenta `playtest_orchestrate` gera um checklist completo.
+- O MCP **não se conecta diretamente** ao MCP oficial do Roblox Studio. Funciona como um "gerador de scripts e instruções" que o agente executa via o MCP oficial.
+- Para bridge real (execução automática), é necessário um plugin do Studio (ferramenta `generate_studio_plugin`) + servidor HTTP externo (futuro).
 
 ## Roadmap
 
-- [ ] FBX import via Studio bridge
-- [ ] Rig validation (AnimationConstraint/Motor6D detection)
-- [ ] Animation playback verification
-- [ ] Play Test orchestration with screenshot capture
-- [ ] Integration with official Roblox Studio MCP
+- [ ] Conectar ao MCP oficial do Studio para execução automática (bridge)
+- [ ] Implementar importação de FBX via API (se disponível)
+- [ ] Adicionar validação de rig via API do Studio
+- [ ] Orquestração de Play Test automatizada (requer bridge)
 
-## License
+## Licença
 
 MIT
