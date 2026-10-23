@@ -128,10 +128,21 @@ const tools = [
 
 server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools }));
 
+// --- Input validation helper ---
+function validateArgs(args, required) {
+  for (const field of required) {
+    if (args[field] === undefined || args[field] === null || args[field] === "") {
+      throw new Error(`Missing required argument: ${field}`);
+    }
+  }
+}
+
 server.setRequestHandler(CallToolRequestSchema, async (request) => {
   const { name, arguments: args } = request.params;
+  try {
 
   if (name === "validate_model") {
+    validateArgs(args, ["modelPath"]);
     const script = generateValidateScript(args.modelPath);
     return {
       content: [{ type: "text", text: `Run this Luau code via execute_luau (Edit mode) to validate ${args.modelPath}:\n\n\`\`\`lua\n${script}\n\`\`\`` }],
@@ -139,6 +150,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
   }
 
   if (name === "pipeline_status") {
+    validateArgs(args, ["pipelineDir"]);
     const dir = args.pipelineDir;
     const source = path.join(dir, "01-source");
     const export_ = path.join(dir, "02-export");
@@ -292,6 +304,9 @@ print("Validacao concluida")
   }
 
   return { content: [{ type: "text", text: `Unknown tool: ${name}` }] };
+  } catch (err) {
+    return { content: [{ type: "text", text: `Error: ${err.message}` }], isError: true };
+  }
 });
 
 function generateValidateScript(modelPath) {
